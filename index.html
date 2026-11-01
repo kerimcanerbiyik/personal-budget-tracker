@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kişisel Bütçe ve Harcama Takip Uygulaması</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 font-sans text-slate-100 min-h-screen flex flex-col">
+
+    <script>
+        // ==========================================
+        // 1. MODEL (VERİ YAPISI)
+        // ==========================================
+        class IslemModel {
+            constructor(kullaniciEmail, tip, kategori, tutar, tarih, aciklama) {
+                this.kullaniciEmail = kullaniciEmail;
+                this.tip = tip;
+                this.kategori = kategori;
+                this.tutar = tutar;
+                this.tarih = tarih;
+                this.aciklama = aciklama;
+            }
+        }
+
+        // ==========================================
+        // 2. VIEWMODEL (İŞLEMLER VE API BAĞLANTILARI)
+        // ==========================================
+        class ButceViewModel {
+            constructor() {
+                this.islemler = [];
+                this.aktifKullaniciEmail = localStorage.getItem('butce_kullanici') || null;
+            }
+
+            async kayitOl(email, sifre) {
+                const res = await fetch('/api/kayit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, sifre })
+                });
+                return await res.json();
+            }
+
+            async girisYap(email, sifre) {
+                const res = await fetch('/api/giris', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, sifre })
+                });
+                const sonuc = await res.json();
+                if (sonuc.success) {
+                    this.aktifKullaniciEmail = sonuc.data.email;
+                    localStorage.setItem('butce_kullanici', this.aktifKullaniciEmail);
+                }
+                return sonuc;
+            }
+
+            cikisYap() {
+                localStorage.removeItem('butce_kullanici');
+                this.aktifKullaniciEmail = null;
+                this.islemler = [];
+            }
+
+            async islemleriCek() {
+                if (!this.aktifKullaniciEmail) return [];
+                try {
+                    const res = await fetch(`/api/islemler?email=${encodeURIComponent(this.aktifKullaniciEmail)}`);
+                    const sonuc = await res.json();
+                    if (sonuc.success) {
+                        this.islemler = sonuc.data;
+                    }
+                    return this.islemler;
+                } catch (err) {
+                    console.error("İşlemler yüklenemedi:", err);
+                    return [];
+                }
+            }
+
+            async islemEkle(yeniVeri) {
+                try {
+                    const res = await fetch('/api/islem-ekle', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(yeniVeri)
+                    });
+                    return await res.json();
+                } catch (err) {
+                    return { success: false, error: err.message };
+                }
+            }
+
+            async islemSil(id) {
+                try {
+                    const res = await fetch(`/api/islem-sil/${id}`, { method: 'DELETE' });
+                    return await res.json();
+                } catch (err) {
+                    return { success: false, error: err.message };
+                }
+            }
+        }
+    </script>
+
+    <!-- ========================================== -->
+    <!-- 3. VIEW (GÖSTERİM VE ARAYÜZ) -->
+    <!-- ========================================== -->
+
+    <!-- GİRİŞ / KAYIT EKRANI -->
+    <div id="authContainer" class="flex-1 flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 p-8 rounded-2xl w-full max-w-md shadow-2xl">
+            <h1 class="text-3xl font-extrabold text-amber-400 mb-2 text-center">Bütçe Takip</h1>
+            <p class="text-slate-400 text-sm text-center mb-6">Kişisel gelir ve giderlerinizi kolayca yönetin</p>
+            
+            <div class="flex mb-6 bg-slate-900 p-1 rounded-xl">
+                <button onclick="sekmeDegistir('giris')" id="btnGirisTab" class="flex-1 py-2 text-sm font-bold rounded-lg bg-indigo-600 text-white transition">Giriş Yap</button>
+                <button onclick="sekmeDegistir('kayit')" id="btnKayitTab" class="flex-1 py-2 text-sm font-bold rounded-lg text-slate-400 transition">Kayıt Ol</button>
+            </div>
+
+            <form id="authForm" class="flex flex-col gap-4">
+                <input type="email" id="email" placeholder="E-posta Adresi" required class="p-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-amber-400">
+                <input type="password" id="sifre" placeholder="Şifre" required class="p-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-amber-400">
+                <button type="submit" id="authSubmitBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold p-3 rounded-xl transition shadow-lg mt-2">Giriş Yap</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- UYGULAMA DASHBOARD EKRANI (Başlangıçta Gizli) -->
+    <div id="appContainer" class="hidden max-w-7xl mx-auto p-4 md:p-6 w-full flex-1">
+        <header class="bg-slate-800 border border-slate-700 shadow-xl rounded-2xl p-6 mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-extrabold text-amber-400">Kişisel Bütçe Paneli</h1>
+                <p class="text-slate-400 text-sm mt-1">Aktif Kullanıcı: <strong id="aktifKullaniciText" class="text-indigo-400"></strong></p>
+            </div>
+            <button onclick="cikisIslemiYap()" class="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2.5 rounded-xl font-semibold transition shadow-md">Çıkış Yap</button>
+        </header>
+
+        <!-- Özet Kartları -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl">
+                <p class="text-slate-400 text-sm font-medium">Toplam Bakiye</p>
+                <h3 id="toplamBakiye" class="text-3xl font-black mt-2 text-white">₺0.00</h3>
+            </div>
+            <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl">
+                <p class="text-slate-400 text-sm font-medium">Toplam Gelir</p>
+                <h3 id="toplamGelir" class="text-3xl font-black mt-2 text-emerald-400">₺0.00</h3>
+            </div>
+            <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl">
+                <p class="text-slate-400 text-sm font-medium">Toplam Gider</p>
+                <h3 id="toplamGider" class="text-3xl font-black mt-2 text-rose-400">₺0.00</h3>
+            </div>
+            <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl">
+                <p class="text-slate-400 text-sm font-medium">İşlem Sayısı</p>
+                <h3 id="toplamIslem" class="text-3xl font-black mt-2 text-amber-400">0</h3>
+            </div>
+        </div>
+
+        <!-- İşlem Ekleme Formu & Filtreler -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+            <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl lg:col-span-1">
+                <h3 class="text-xl font-bold text-amber-400 mb-4">Yeni İşlem Ekle</h3>
+                <form id="islemForm" class="flex flex-col gap-4">
+                    <select id="islemTip" class="p-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-amber-400">
+                        <option value="gider">Gider</option>
+                        <option value="gelir">Gelir</option>
+                    </select>
+                    <select id="islemKategori" class="p-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-amber-400">
+                        <option value="Yemek">Yemek</option>
+                        <option value="Ulaşım">Ulaşım</option>
+                        <option value="Faturalar">Faturalar</option>
+                        <option value="Kira">Kira</option>
+                        <option value="Eğlence">Eğlence</option>
+                        <option value="Maaş">Maaş</option>
+                        <option value="Diğer">Diğer</option>
+                    </select>
+                    <input type="number" id="islemTutar" placeholder="Tutar (₺)" step="0.01" required class="p-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-amber-400">
+                    <input type="date" id="islemTarih" required class="p-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-amber-400">
+                    <input type="text" id="islemAciklama" placeholder="Açıklama (Örn: Market)" required class="p-3 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-amber-400">
+                    <button type="submit" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold p-3 rounded-xl transition shadow-md">İşlemi Kaydet</button>
+                </form>
+            </div>
+
+            <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl lg:col-span-2 flex flex-col">
+                <div class="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
+                    <h3 class="text-xl font-bold text-slate-200">İşlem Geçmişi</h3>
+                    <select id="filtreKategori" onchange="ekraniYenile()" class="p-2 bg-slate-900 border border-slate-700 rounded-xl text-sm text-white">
+                        <option value="">Tüm Kategoriler</option>
+                        <option value="Yemek">Yemek</option>
+                        <option value="Ulaşım">Ulaşım</option>
+                        <option value="Faturalar">Faturalar</option>
+                        <option value="Kira">Kira</option>
+                        <option value="Eğlence">Eğlence</option>
+                        <option value="Maaş">Maaş</option>
+                        <option value="Diğer">Diğer</option>
+                    </select>
+                </div>
+
+                <div class="overflow-x-auto flex-1">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wider">
+                                <th class="py-3 px-4">Tarih</th>
+                                <th class="py-3 px-4">Kategori</th>
+                                <th class="py-3 px-4">Açıklama</th>
+                                <th class="py-3 px-4">Tutar</th>
+                                <th class="py-3 px-4 text-right">İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody id="islemTabloBody" class="divide-y divide-slate-700/50 text-sm"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 4. ÇALIŞTIRMA / BAŞLATMA (EN AŞAĞIDA)
+        // ==========================================
+        const viewModel = new ButceViewModel();
+        let aktifMod = 'giris';
+
+        function sekmeDegistir(mod) {
+            aktifMod = mod;
+            const btnGiris = document.getElementById('btnGirisTab');
+            const btnKayit = document.getElementById('btnKayitTab');
+            const submitBtn = document.getElementById('authSubmitBtn');
+
+            if (mod === 'giris') {
+                btnGiris.className = "flex-1 py-2 text-sm font-bold rounded-lg bg-indigo-600 text-white transition";
+                btnKayit.className = "flex-1 py-2 text-sm font-bold rounded-lg text-slate-400 transition";
+                submitBtn.innerText = "Giriş Yap";
+            } else {
+                btnKayit.className = "flex-1 py-2 text-sm font-bold rounded-lg bg-indigo-600 text-white transition";
+                btnGiris.className = "flex-1 py-2 text-sm font-bold rounded-lg text-slate-400 transition";
+                submitBtn.innerText = "Kayıt Ol";
+            }
+        }
+
+        document.getElementById('authForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const sifre = document.getElementById('sifre').value;
+
+            if (aktifMod === 'kayit') {
+                const sonuc = await viewModel.kayitOl(email, sifre);
+                if (sonuc.success) {
+                    alert('Kayıt başarılı! Giriş yapabilirsiniz.');
+                    sekmeDegistir('giris');
+                } else {
+                    alert('Hata: ' + sonuc.error);
+                }
+            } else {
+                const sonuc = await viewModel.girisYap(email, sifre);
+                if (sonuc.success) {
+                    oturumDurumunuYonet();
+                } else {
+                    alert('Hata: ' + sonuc.error);
+                }
+            }
+        });
+
+        function cikisIslemiYap() {
+            viewModel.cikisYap();
+            oturumDurumunuYonet();
+        }
+
+        async function ekraniYenile() {
+            const liste = await viewModel.islemleriCek();
+            const kategoriFiltre = document.getElementById('filtreKategori').value;
+            
+            const filtrelenmis = liste.filter(item => {
+                return kategoriFiltre === "" || item.kategori === kategoriFiltre;
+            });
+
+            let toplamGelir = 0;
+            let toplamGider = 0;
+
+            liste.forEach(item => {
+                if (item.tip === 'gelir') toplamGelir += item.tutar;
+                else toplamGider += item.tutar;
+            });
+
+            const netBakiye = toplamGelir - toplamGider;
+
+            document.getElementById('toplamBakiye').innerText = `₺${netBakiye.toFixed(2)}`;
+            document.getElementById('toplamGelir').innerText = `₺${toplamGelir.toFixed(2)}`;
+            document.getElementById('toplamGider').innerText = `₺${toplamGider.toFixed(2)}`;
+            document.getElementById('toplamIslem').innerText = liste.length;
+
+            const tbody = document.getElementById('islemTabloBody');
+            if (filtrelenmis.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-400">Hiç işlem bulunamadı.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = filtrelenmis.map(item => `
+                <tr class="hover:bg-slate-700/30 transition">
+                    <td class="py-3 px-4 text-slate-300 text-xs">${item.tarih}</td>
+                    <td class="py-3 px-4"><span class="px-2.5 py-1 bg-slate-700 text-slate-200 text-xs rounded-full">${item.kategori}</span></td>
+                    <td class="py-3 px-4 text-white font-medium">${item.aciklama}</td>
+                    <td class="py-3 px-4 font-bold ${item.tip === 'gelir' ? 'text-emerald-400' : 'text-rose-400'}">
+                        ${item.tip === 'gelir' ? '+' : '-'}₺${item.tutar.toFixed(2)}
+                    </td>
+                    <td class="py-3 px-4 text-right">
+                        <button onclick="islemSilmeIslemi('${item._id}')" class="text-rose-400 hover:text-rose-300 text-xs bg-rose-500/10 px-3 py-1.5 rounded-lg font-semibold transition">Sil</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        document.getElementById('islemForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const yeniIslem = new IslemModel(
+                viewModel.aktifKullaniciEmail,
+                document.getElementById('islemTip').value,
+                document.getElementById('islemKategori').value,
+                Number(document.getElementById('islemTutar').value),
+                document.getElementById('islemTarih').value,
+                document.getElementById('islemAciklama').value
+            );
+
+            const sonuc = await viewModel.islemEkle(yeniIslem);
+            if (sonuc.success) {
+                document.getElementById('islemForm').reset();
+                document.getElementById('islemTarih').valueAsDate = new Date();
+                ekraniYenile();
+            } else {
+                alert('Hata: ' + sonuc.error);
+            }
+        });
+
+        async function islemSilmeIslemi(id) {
+            if (!confirm('Bu işlemi silmek istediğinize emin misiniz?')) return;
+            const sonuc = await viewModel.islemSil(id);
+            if (sonuc.success) {
+                ekraniYenile();
+            }
+        }
+
+        function oturumDurumunuYonet() {
+            const authContainer = document.getElementById('authContainer');
+            const appContainer = document.getElementById('appContainer');
+
+            if (viewModel.aktifKullaniciEmail) {
+                authContainer.classList.add('hidden');
+                appContainer.classList.remove('hidden');
+                document.getElementById('aktifKullaniciText').innerText = viewModel.aktifKullaniciEmail;
+                document.getElementById('islemTarih').valueAsDate = new Date();
+                ekraniYenile();
+            } else {
+                appContainer.classList.add('hidden');
+                authContainer.classList.remove('hidden');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            oturumDurumunuYonet();
+        });
+    </script>
+</body>
+</html>

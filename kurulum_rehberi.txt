@@ -1,0 +1,29 @@
+================================================================================
+KİŞİSEL BÜTÇE VE HARCAMA TAKİP UYGULAMASI: KURULUM VE KULLANIM REHBERİ
+================================================================================
+
+1. SİSTEM GEREKSİNİMLERİ VE MALİYETLER:
+- Node.js (Bilgisayarınızda kurulu olmalıdır)
+- MongoDB Atlas (Ücretsiz M0 Free Tier bulut veritabanı cluster'ı)
+- Render.com veya benzeri bir hosting platformu (7/24 canlıya almak için)
+
+2. KODLARIN İÇİNDEKİLERİ DOLDURMA VE YAYINLAMA:
+- server.js: MongoDB bağlantı adresiniz hazır verilmiştir. Kendi MongoDB Atlas URL'nizi buradaki `MONGO_URI` değişkenine yazabilirsiniz.
+- Kayıt Ol / Giriş Yap: Sitede sağlanan arayüz üzerinden kendi e-posta ve şifrenizle kayıt olabilir ve güvenli bir şekilde bütçenizi yönetmeye başlayabilirsiniz.
+
+3. LOKALDE TEST ETME ADIMLARI:
+- Proje dosyalarını (server.js, index.html, kurulum_rehberi.txt) bir klasöre çıkartın.
+- Terminalinizi ilgili klasörde açın ve kütüphaneleri yükleyin:
+  npm install express mongoose cors
+- Sunucuyu başlatın:
+  node server.js
+- Tarayıcınızda şu adrese gidin:
+  http://localhost:3000
+
+4. RENDER.COM ÜZERİNDEN 7/24 CANLIYA ALMA:
+- Kodları GitHub üzerinde yeni bir private (özel) repoya yükleyin.
+- Render.com paneline girip 'New Web Service' oluşturun.
+- GitHub reponuzu bağlayın.
+- Build Command: (Boş bırakabilirsiniz)
+- Start Command: node server.js
+- Yayına alarak her yerden erişebileceğiniz canlı linkinizi elde edin!
